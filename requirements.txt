@@ -1,8 +1,9 @@
 streamlit
-streamlit-qrcode-scanner
-opencv-python-headless
+streamlit_qrcode_scanner
 pandas
 pdfplumber
 requests
 Pillow
 openpyxl
+qrcode
+
