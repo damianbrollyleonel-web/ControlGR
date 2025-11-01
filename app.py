@@ -1,75 +1,87 @@
 import streamlit as st
-from streamlit_qrcode_scanner import qrcode_scanner
 import pandas as pd
-from datetime import datetime
+import requests
+import pdfplumber
+import re
 import os
-import time
+from io import BytesIO
+from PIL import Image
+from datetime import datetime
 
-# ========================
-# CONFIGURACIÓN DE PÁGINA
-# ========================
-st.set_page_config(page_title="Control de GR - Entregas", layout="centered")
+st.set_page_config(page_title="ControlGR", page_icon="🚚", layout="centered")
 
-# ========================
-# VARIABLES DE ESTADO
-# ========================
-if "qr_url" not in st.session_state:
-    st.session_state.qr_url = ""
-if "correlativo" not in st.session_state:
-    st.session_state.correlativo = ""
-if "cliente" not in st.session_state:
-    st.session_state.cliente = "(Pendiente leer PDF)"
+st.title("📦 Control de Entrega - Guías de Remisión")
 
-# ========================
-# CONFIG RUTAS LOCALES
-# ========================
-PDF_FOLDER = "pdfs"
-PHOTO_FOLDER = "fotos"
-EXCEL_FILE = "registro_entregas.xlsx"
+# ---- Carpetas locales ----
+os.makedirs("pdfs", exist_ok=True)
+os.makedirs("fotos", exist_ok=True)
 
-os.makedirs(PDF_FOLDER, exist_ok=True)
-os.makedirs(PHOTO_FOLDER, exist_ok=True)
+def extract_from_pdf(pdf_path):
+    with pdfplumber.open(pdf_path) as pdf:
+        text = "\n".join([p.extract_text() or "" for p in pdf.pages])
 
-# ========================
-# SIMULACIÓN de extracción desde PDF
-# (luego integramos Selenium)
-# ========================
-def extract_data_from_pdf_simulated(qr_url):
-    # ➜ Aquí todavía no descargamos el PDF
-    # Solo devuelve un ejemplo simulado confiable
-    return {
-        "correlativo": "T003 - 0002070",
-        "cliente": "NEGOCIOS VICAMOR E.I.R.L. - RUC 20607074578"
-    }
+    correl = re.search(r"(T00\d)\s*-\s*(\d{5})", text)
+    correlativo = f"{correl.group(1)} - {correl.group(2)}" if correl else "No encontrado"
 
-# ========================
-# COLUMNA IZQUIERDA — QR
-# ========================
-st.header("📌 Registro de Entrega")
+    cliente_match = re.search(r"Datos del destinatario:(.*?)Datos del traslado:", text, re.DOTALL)
+    cliente = "No encontrado"
+    if cliente_match:
+        bloque = cliente_match.group(1).strip().split("\n")
+        if bloque:
+            cliente = re.sub(r"\s*-\s*RUC.*", "", bloque[0].strip())
 
-qr_result = qrcode_scanner("📷 Escanear Código QR")
+    return correlativo, cliente
 
-if qr_result and qr_result != st.session_state.qr_url:
-    st.session_state.qr_url = qr_result
-    st.info(f"✅ QR Detectado:\n{qr_result}")
-    time.sleep(1)
 
-    extracted = extract_data_from_pdf_simulated(qr_result)
-    st.session_state.correlativo = extracted["correlativo"]
-    st.session_state.cliente = extracted["cliente"]
+st.subheader("1️⃣ Escanear QR de la Guía")
+qr_image = st.camera_input("📷 Escanear QR", help="Enfoca el QR hasta que se lea automáticamente")
 
-# ========================
-# MOSTRAR DATOS EXTRAÍDOS
-# ========================
-st.subheader("📄 Datos del Comprobante (Automático)")
-st.text_input("Correlativo", value=st.session_state.correlativo, disabled=True)
-st.text_input("Cliente", value=st.session_state.cliente, disabled=True)
+correlativo = ""
+cliente = ""
 
-# ========================
-# CAMPOS MANUALES
-# ========================
-st.subheader("📝 Información del Transporte")
-fecha_entrega = st.date_input("📅 Fecha de entrega", value=datetime.today())
+if qr_image:
+    with st.spinner("⏳ Decodificando QR..."):
+        import cv2
+        import numpy as np
+        from pyzbar.pyzbar import decode
+
+        img = Image.open(qr_image)
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        decoded = decode(img_cv)
+
+        if decoded:
+            qr_url = decoded[0].data.decode("utf-8")
+            st.success("✅ QR reconocido")
+            st.write(qr_url)
+
+            with st.spinner("📥 Descargando PDF..."):
+                try:
+                    r = requests.get(qr_url, timeout=60)
+                    if r.status_code == 200:
+                        pdf_name = f"pdfs/GR_{datetime.now().strftime('%H%M%S')}.pdf"
+                        with open(pdf_name, "wb") as f:
+                            f.write(r.content)
+
+                        correlativo, cliente = extract_from_pdf(pdf_name)
+                    else:
+                        st.error("⚠ Error al descargar PDF")
+                except Exception as e:
+                    st.error(f"❌ Error obteniendo PDF: {e}")
+        else:
+            st.warning("⚠ No se detectó QR")
+
+
+# ---- DATA FORM ----
+st.subheader("2️⃣ Datos de la entrega")
+
+col1, col2 = st.columns(2)
+with col1:
+    correlativo = st.text_input("Correlativo", value=correlativo, disabled=True)
+with col2:
+    cliente = st.text_input("Cliente", value=cliente, disabled=True)
+
+fecha_entrega = st.date_input("📅 Fecha de entrega")
+
 transporte = st.selectbox("🚚 Empresa de Transporte", [
     "T & S OPERACIONES LOGISTICAS S.A.C.",
     "SOLUCIONES LOGISTICAS POMA S.A.C.",
@@ -80,16 +92,9 @@ transporte = st.selectbox("🚚 Empresa de Transporte", [
     "TRANSPORTE ORIENTAL"
 ])
 
-st.subheader("📌 Estado de la entrega")
-estado_entrega = st.selectbox("Estado de la entrega", [
-    "Entregado",
-    "Entregado Parcialmente",
-    "Rechazado"
-])
-
-motivo_estado = st.selectbox("Motivo de estado", [
+motivo_estado = st.selectbox("📌 Motivo de Estado", [
     "Entrega Conforme",
-    "Cliente NO solicitó pedido",
+    "Cliente NO solicito pedido",
     "Error de Pedido",
     "Rechazo Parcial",
     "Rechazo Total",
@@ -98,52 +103,45 @@ motivo_estado = st.selectbox("Motivo de estado", [
     "Mercadería en Mal estado"
 ])
 
-observaciones = st.text_area("🗒 Observaciones")
+estado_entrega = st.selectbox("Estado de la entrega", [
+    "Entregado",
+    "Parcial",
+    "Rechazado"
+])
 
-# ========================
-# FOTO DEL COMPROBANTE
-# ========================
-st.subheader("📸 Foto del Comprobante")
-foto = st.camera_input("Tomar foto del comprobante firmado")
+foto = st.camera_input("📸 Foto del comprobante firmado")
+observaciones = st.text_area("📝 Observaciones")
 
-# ========================
-# BOTÓN GUARDAR
-# ========================
-if st.button("💾 Guardar Registro"):
-    if not st.session_state.correlativo:
-        st.error("⚠️ Primero debe escanear el QR")
-    elif foto is None:
-        st.error("⚠️ Debe tomar una foto")
+if st.button("✅ Guardar Registro"):
+    if not correlativo or not cliente:
+        st.error("⚠ Escanee el QR primero")
     else:
-        # Guardar foto
-        foto_path = os.path.join(PHOTO_FOLDER, f"FOTO_{int(time.time())}.jpg")
-        with open(foto_path, "wb") as f:
-            f.write(foto.getbuffer())
+        foto_path = ""
+        if foto:
+            img = Image.open(foto)
+            foto_path = f"fotos/foto_{datetime.now().strftime('%H%M%S')}.jpg"
+            img.save(foto_path)
 
-        # Guardar en Excel
-        nuevo_registro = pd.DataFrame([{
-            "Fecha_Registro": datetime.now(),
-            "Correlativo": st.session_state.correlativo,
-            "Cliente": st.session_state.cliente,
+        registro = {
+            "Fecha_de_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Correlativo": correlativo,
+            "Cliente": cliente,
+            "Fecha_entrega": str(fecha_entrega),
             "Transporte": transporte,
-            "Fecha_Entrega": fecha_entrega,
-            "Estado_Entrega": estado_entrega,
             "Motivo_Estado": motivo_estado,
+            "Estado_entrega": estado_entrega,
             "Observaciones": observaciones,
-            "Ruta_Foto": foto_path
-        }])
+            "Ruta_foto": foto_path
+        }
 
-        if os.path.exists(EXCEL_FILE):
-            df_existente = pd.read_excel(EXCEL_FILE)
-            df_final = pd.concat([df_existente, nuevo_registro], ignore_index=True)
+        df = pd.DataFrame([registro])
+
+        excel_file = "registro_entregas.xlsx"
+        if os.path.exists(excel_file):
+            df.to_excel(excel_file, index=False, header=False, mode='a')
         else:
-            df_final = nuevo_registro
+            df.to_excel(excel_file, index=False)
 
-        df_final.to_excel(EXCEL_FILE, index=False)
+        st.success("✅ Registro Guardado correctamente")
 
-        st.success("✅ Registro guardado correctamente")
-
-        st.session_state.correlativo = ""
-        st.session_state.cliente = "(Pendiente leer PDF)"
-        st.session_state.qr_url = ""
 
