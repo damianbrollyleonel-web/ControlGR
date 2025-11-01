@@ -1,9 +1,11 @@
 streamlit
-streamlit_qrcode_scanner
+streamlit-qrcode-scanner
 pandas
 pdfplumber
 requests
 Pillow
 openpyxl
-qrcode
+selenium
+webdriver-manager
+
 
