@@ -20,7 +20,7 @@ st.title("📦 Control de Entregas - GR")
 st.subheader("1️⃣ Escanear QR del Comprobante")
 
 # Scanner - Cámara trasera
-qr_result = qrcode_scanner(key="qr_cam", label="Escanee el QR", camera="environment")
+qr_result = qrcode_scanner(key="qr_cam", label="Escanee el QR")
 
 SUNAT_BASE = "https://e-factura.sunat.gob.pe/v1/contribuyente/gre/comprobantes/descargaqr?hashqr="
 
