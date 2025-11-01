@@ -1,116 +1,76 @@
 import streamlit as st
-import pandas as pd
 from streamlit_qrcode_scanner import qrcode_scanner
-import os
+import pandas as pd
 from datetime import datetime
-import pdfplumber
-import re
-import tempfile
-import shutil
-from PIL import Image
-import requests
+import os
+import time
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+# ========================
+# CONFIGURACIÓN DE PÁGINA
+# ========================
+st.set_page_config(page_title="Control de GR - Entregas", layout="centered")
 
-# ==============================
-# 📌 CONFIG STREAMLIT
-# ==============================
-st.set_page_config(page_title="Control de Entregas GR", page_icon="📦")
+# ========================
+# VARIABLES DE ESTADO
+# ========================
+if "qr_url" not in st.session_state:
+    st.session_state.qr_url = ""
+if "correlativo" not in st.session_state:
+    st.session_state.correlativo = ""
+if "cliente" not in st.session_state:
+    st.session_state.cliente = "(Pendiente leer PDF)"
 
-# ==============================
-# 📌 CARPETAS
-# ==============================
-CARPETA_PDFS = "pdfs"
-CARPETA_FOTOS = "fotos"
-CARPETA_EXCEL = "registros"
-EXCEL_PATH = os.path.join(CARPETA_EXCEL, "registro_entregas.xlsx")
+# ========================
+# CONFIG RUTAS LOCALES
+# ========================
+PDF_FOLDER = "pdfs"
+PHOTO_FOLDER = "fotos"
+EXCEL_FILE = "registro_entregas.xlsx"
 
-os.makedirs(CARPETA_PDFS, exist_ok=True)
-os.makedirs(CARPETA_FOTOS, exist_ok=True)
-os.makedirs(CARPETA_EXCEL, exist_ok=True)
+os.makedirs(PDF_FOLDER, exist_ok=True)
+os.makedirs(PHOTO_FOLDER, exist_ok=True)
 
-# ==============================
-# 📌 FUNCIONES
-# ==============================
-def setup_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+# ========================
+# SIMULACIÓN de extracción desde PDF
+# (luego integramos Selenium)
+# ========================
+def extract_data_from_pdf_simulated(qr_url):
+    # ➜ Aquí todavía no descargamos el PDF
+    # Solo devuelve un ejemplo simulado confiable
+    return {
+        "correlativo": "T003 - 0002070",
+        "cliente": "NEGOCIOS VICAMOR E.I.R.L. - RUC 20607074578"
+    }
 
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+# ========================
+# COLUMNA IZQUIERDA — QR
+# ========================
+st.header("📌 Registro de Entrega")
 
-    return driver
+qr_result = qrcode_scanner("📷 Escanear Código QR")
 
-def descargar_pdf(url):
-    """Descarga PDF desde URL del QR usando Selenium"""
-    try:
-        driver = setup_driver()
-        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        driver.get(url)
-        st.write("📥 Descargando PDF desde SUNAT...")
+if qr_result and qr_result != st.session_state.qr_url:
+    st.session_state.qr_url = qr_result
+    st.info(f"✅ QR Detectado:\n{qr_result}")
+    time.sleep(1)
 
-        # Espera breve para carga del documento
-        st.info("⏳ Esperando la descarga del PDF...")
-        driver.implicitly_wait(10)
+    extracted = extract_data_from_pdf_simulated(qr_result)
+    st.session_state.correlativo = extracted["correlativo"]
+    st.session_state.cliente = extracted["cliente"]
 
-        # Descargar PDF con request directo después del load Selenium
-        r = requests.get(url, timeout=20)
-        with open(temp.name, "wb") as f:
-            f.write(r.content)
+# ========================
+# MOSTRAR DATOS EXTRAÍDOS
+# ========================
+st.subheader("📄 Datos del Comprobante (Automático)")
+st.text_input("Correlativo", value=st.session_state.correlativo, disabled=True)
+st.text_input("Cliente", value=st.session_state.cliente, disabled=True)
 
-        driver.quit()
-        return temp.name
-
-    except Exception as e:
-        st.error(f"❌ Error descargando PDF: {e}")
-        return None
-
-def extraer_datos(pdf_path):
-    """Extrae Correlativo y Cliente desde el PDF"""
-    with pdfplumber.open(pdf_path) as pdf:
-        text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
-
-    # ✅ Extraer correlativo (T003 - 00002092)
-    correlativo = re.search(r"(T00\d)\s*-\s*(\d{5})", text)
-    correlativo = f"{correlativo.group(1)} - {correlativo.group(2)}" if correlativo else ""
-
-    # ✅ Cliente (solo nombre)
-    cliente_match = re.search(r"Datos del destinatario:(.*?)Datos del traslado:", text, re.DOTALL)
-    cliente = ""
-    if cliente_match:
-        bloque_dest = cliente_match.group(1).strip().split("\n")
-        if bloque_dest:
-            primera_linea = bloque_dest[0].strip()
-            cliente = re.sub(r"\s*-\s*RUC.*", "", primera_linea)
-
-    return correlativo, cliente
-
-def guardar_registro(data):
-    if os.path.exists(EXCEL_PATH):
-        df = pd.read_excel(EXCEL_PATH)
-        df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
-    else:
-        df = pd.DataFrame([data])
-
-    df.to_excel(EXCEL_PATH, index=False)
-
-# ==============================
-# 📌 UI — INTERFAZ
-# ==============================
-st.title("📦 Control de Entregas — GR")
-
-st.subheader("1️⃣ Escanear QR de la Guía de Remisión")
-qr_data = qrcode_scanner(key="qr1")
-
-correlativo = st.text_input("📌 Correlativo", value="", disabled=True)
-cliente = st.text_input("🏢 Cliente", value="", disabled=True)
-transporte = st.selectbox("🚚 Transporte", [
+# ========================
+# CAMPOS MANUALES
+# ========================
+st.subheader("📝 Información del Transporte")
+fecha_entrega = st.date_input("📅 Fecha de entrega", value=datetime.today())
+transporte = st.selectbox("🚚 Empresa de Transporte", [
     "T & S OPERACIONES LOGISTICAS S.A.C.",
     "SOLUCIONES LOGISTICAS POMA S.A.C.",
     "FOSFORERA PERUANA S.A.",
@@ -120,29 +80,16 @@ transporte = st.selectbox("🚚 Transporte", [
     "TRANSPORTE ORIENTAL"
 ])
 
-if qr_data:
-    st.success("✅ QR Detectado")
-    pdf_temp = descargar_pdf(qr_data)
+st.subheader("📌 Estado de la entrega")
+estado_entrega = st.selectbox("Estado de la entrega", [
+    "Entregado",
+    "Entregado Parcialmente",
+    "Rechazado"
+])
 
-    if pdf_temp:
-        correlativo_ex, cliente_ex = extraer_datos(pdf_temp)
-        if correlativo_ex:
-            correlativo = correlativo_ex
-            st.session_state["correlativo"] = correlativo_ex
-        if cliente_ex:
-            cliente = cliente_ex
-            st.session_state["cliente"] = cliente_ex
-
-# ✅ Sin edición si ya están cargados
-correlativo = st.text_input("📌 Correlativo", value=st.session_state.get("correlativo", correlativo), disabled=True)
-cliente = st.text_input("🏢 Cliente", value=st.session_state.get("cliente", cliente), disabled=True)
-
-st.subheader("2️⃣ Datos de Entrega")
-fecha_entrega = st.date_input("📅 Fecha de entrega", datetime.now())
-
-motivo_estado = st.selectbox("⚠ Motivo del estado", [
+motivo_estado = st.selectbox("Motivo de estado", [
     "Entrega Conforme",
-    "Cliente NO solicito pedido",
+    "Cliente NO solicitó pedido",
     "Error de Pedido",
     "Rechazo Parcial",
     "Rechazo Total",
@@ -151,45 +98,52 @@ motivo_estado = st.selectbox("⚠ Motivo del estado", [
     "Mercadería en Mal estado"
 ])
 
-estado_entrega = st.selectbox("📍 Estado", [
-    "Entregado",
-    "Entregado Parcial",
-    "Rechazado"
-])
+observaciones = st.text_area("🗒 Observaciones")
 
-observaciones = st.text_area("📝 Observaciones", "")
+# ========================
+# FOTO DEL COMPROBANTE
+# ========================
+st.subheader("📸 Foto del Comprobante")
+foto = st.camera_input("Tomar foto del comprobante firmado")
 
-foto = st.camera_input("📷 Foto del comprobante firmado")
-
-# ==============================
-# 📌 GUARDAR
-# ==============================
-if st.button("💾 Guardar registro"):
-    if not correlativo:
-        st.error("❌ Falta correlativo (QR no válido)")
+# ========================
+# BOTÓN GUARDAR
+# ========================
+if st.button("💾 Guardar Registro"):
+    if not st.session_state.correlativo:
+        st.error("⚠️ Primero debe escanear el QR")
+    elif foto is None:
+        st.error("⚠️ Debe tomar una foto")
     else:
-        ruta_pdf = os.path.join(CARPETA_PDFS, f"{correlativo.replace(' ', '_')}.pdf")
-        shutil.copy(pdf_temp, ruta_pdf)
+        # Guardar foto
+        foto_path = os.path.join(PHOTO_FOLDER, f"FOTO_{int(time.time())}.jpg")
+        with open(foto_path, "wb") as f:
+            f.write(foto.getbuffer())
 
-        ruta_foto = ""
-        if foto:
-            ruta_foto = os.path.join(CARPETA_FOTOS, f"FOTO_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg")
-            image = Image.open(foto)
-            image.save(ruta_foto)
-
-        data = {
-            "Fecha_de_Registro": datetime.now(),
-            "Guia_de_Remision": correlativo,
-            "Cliente": cliente,
+        # Guardar en Excel
+        nuevo_registro = pd.DataFrame([{
+            "Fecha_Registro": datetime.now(),
+            "Correlativo": st.session_state.correlativo,
+            "Cliente": st.session_state.cliente,
             "Transporte": transporte,
-            "Fecha_de_Entrega": fecha_entrega,
-            "Motivo_Estado": motivo_estado,
+            "Fecha_Entrega": fecha_entrega,
             "Estado_Entrega": estado_entrega,
+            "Motivo_Estado": motivo_estado,
             "Observaciones": observaciones,
-            "Ruta_PDF": ruta_pdf,
-            "Ruta_Foto": ruta_foto
-        }
+            "Ruta_Foto": foto_path
+        }])
 
-        guardar_registro(data)
+        if os.path.exists(EXCEL_FILE):
+            df_existente = pd.read_excel(EXCEL_FILE)
+            df_final = pd.concat([df_existente, nuevo_registro], ignore_index=True)
+        else:
+            df_final = nuevo_registro
+
+        df_final.to_excel(EXCEL_FILE, index=False)
+
         st.success("✅ Registro guardado correctamente")
-        st.balloons()
+
+        st.session_state.correlativo = ""
+        st.session_state.cliente = "(Pendiente leer PDF)"
+        st.session_state.qr_url = ""
+
