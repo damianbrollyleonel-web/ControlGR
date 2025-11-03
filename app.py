@@ -1,33 +1,59 @@
 import streamlit as st
+from PIL import Image
 import pandas as pd
 import os
 from datetime import datetime
+from extract_pdf_data import extract_data_from_pdf
+from utils_download_pdf import download_pdf
 
-PDF_FOLDER = "pdfs"
-PHOTO_FOLDER = "fotos"
+st.set_page_config(page_title="Control de Entregas - GR", layout="centered")
 
-os.makedirs(PDF_FOLDER, exist_ok=True)
-os.makedirs(PHOTO_FOLDER, exist_ok=True)
+st.title("📦 Registro de Entregas - GR")
 
-st.set_page_config(page_title="Control GR", layout="centered")
+# ========================
+# ✅ SESIÓN INICIAL
+# ========================
+if "correlativo" not in st.session_state:
+    st.session_state["correlativo"] = ""
+if "cliente" not in st.session_state:
+    st.session_state["cliente"] = ""
 
-st.title("🚚 Control de Entrega GR - Chofer")
+# ========================
+# ✅ ZONA QR - PEGADO DE URL
+# ========================
+st.subheader("🔗 Escaneo del QR mediante URL")
 
-st.markdown("📌 Por favor ingrese la **URL del QR** (luego activaremos el escaneo directo).")
+qr_input_url = st.text_input("📌 Pega aquí la URL obtenida del QR")
 
-qr_url = st.text_input("🔗 Pega aquí el enlace del QR")
+if st.button("Procesar QR y extraer datos"):
+    if qr_input_url.strip() == "":
+        st.warning("⚠️ Por favor, pega la URL del QR primero.")
+    else:
+        with st.spinner("Procesando PDF…"):
+            try:
+                pdf_path = download_pdf(qr_input_url)
+                correlativo, cliente = extract_data_from_pdf(pdf_path)
 
-correlativo = st.session_state.get("correlativo", "")
-cliente = st.session_state.get("cliente", "")
+                st.session_state["correlativo"] = correlativo
+                st.session_state["cliente"] = cliente
 
-st.text_input("📌 Correlativo", value=correlativo, disabled=True)
-st.text_input("🏢 Cliente", value=cliente, disabled=True)
+                st.success("✅ Datos obtenidos correctamente del PDF")
 
-fecha_entrega = st.date_input("📅 Fecha de Entrega", datetime.today())
+            except Exception as e:
+                st.error(f"❌ Error procesando el PDF: {e}")
 
-uploaded_photo = st.camera_input("📸 Foto del Comprobante Firmado")
+# ========================
+# ✅ DATOS EXTRAÍDOS (BLOQUEADOS)
+# ========================
+st.subheader("📋 Datos Automáticos del QR")
 
-transportes_opciones = [
+correlativo = st.text_input("📌 Correlativo", value=st.session_state["correlativo"], disabled=True)
+cliente = st.text_input("🏢 Cliente", value=st.session_state["cliente"], disabled=True)
+
+# ========================
+# ✅ TRANSPORTISTA MANUAL - Lista Desplegable
+# ========================
+transportistas = [
     "T & S OPERACIONES LOGISTICAS S.A.C.",
     "SOLUCIONES LOGISTICAS POMA S.A.C.",
     "FOSFORERA PERUANA S.A.",
@@ -36,12 +62,27 @@ transportes_opciones = [
     "TRANSPORT SOLUTION A & L S.A.C.",
     "TRANSPORTE ORIENTAL"
 ]
-transporte = st.selectbox("🚛 Empresa de Transporte", transportes_opciones)
 
-estado_opciones = ["Entregado", "Entregado Parcialmente", "Rechazado"]
-estado = st.selectbox("📦 Estado de la Entrega", estado_opciones)
+transporte = st.selectbox("🚚 Empresa de Transporte", transportistas)
 
-motivo_opciones = [
+# ========================
+# ✅ FECHA ENTREGA
+# ========================
+fecha_entrega = st.date_input("📅 Fecha de Entrega (Manual)")
+
+# ========================
+# ✅ ESTADO DE ENTREGA
+# ========================
+estado_entrega = st.selectbox("📌 Estado de Entrega", [
+    "Entregado",
+    "Entregado parcialmente",
+    "Rechazado"
+])
+
+# ========================
+# ✅ MOTIVO DEL ESTADO (editable siempre)
+# ========================
+motivos_estado = [
     "Entrega Conforme",
     "Cliente NO solicito pedido",
     "Error de Pedido",
@@ -51,41 +92,63 @@ motivo_opciones = [
     "Fuera de Horario de Cita",
     "Mercadería en Mal estado"
 ]
-motivo_estado = st.selectbox("⚠ Motivo del Estado", motivo_opciones)
 
-observaciones = st.text_area("📝 Observaciones adicionales (opcional)")
+motivo_estado = st.selectbox("⚠️ Motivo del Estado", motivos_estado)
 
-def guardar_registro():
-    photo_path = ""
-    if uploaded_photo:
-        photo_filename = f"foto_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
-        photo_path = os.path.join(PHOTO_FOLDER, photo_filename)
-        with open(photo_path, "wb") as f:
-            f.write(uploaded_photo.getvalue())
+# ========================
+# ✅ OBSERVACIONES
+# ========================
+observaciones = st.text_area("📝 Observaciones (Opcional)")
 
-    registro = {
-        "Fecha_de_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Guia_de_Remision": correlativo,
-        "Cliente": cliente,
-        "Transporte": transporte,
-        "Fecha_de_Entrega": fecha_entrega.strftime("%Y-%m-%d"),
-        "Estado_Entrega": estado,
-        "Motivo_Estado": motivo_estado,
-        "Observaciones": observaciones,
-        "Ruta_Foto": photo_path,
-        "Ruta_PDF": "",
-        "URL_QR": qr_url
-    }
+# ========================
+# ✅ CARGA DE FOTO
+# ========================
+st.subheader("📸 Foto del Comprobante Firmado")
+foto = st.camera_input("Toma una foto del comprobante firmado")
 
-    excel_path = "registro_entregas.xlsx"
-    if os.path.exists(excel_path):
-        df = pd.read_excel(excel_path)
-        df = pd.concat([df, pd.DataFrame([registro])], ignore_index=True)
+# ========================
+# ✅ GUARDAR REGISTRO
+# ========================
+st.subheader("💾 Guardar Registro")
+
+if st.button("✅ Guardar"):
+    if not correlativo or correlativo == "":
+        st.error("⚠️ Primero escanea el QR para obtener el correlativo.")
     else:
-        df = pd.DataFrame([registro])
+        # Asegurar carpetas
+        os.makedirs("pdfs", exist_ok=True)
+        os.makedirs("fotos", exist_ok=True)
 
-    df.to_excel(excel_path, index=False)
-    st.success("✅ Registro guardado correctamente")
+        # Guardar foto
+        ruta_foto = ""
+        if foto is not None:
+            image = Image.open(foto)
+            nombre_foto = f"FOTO_{correlativo.replace(' ','_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+            ruta_foto = os.path.join("fotos", nombre_foto)
+            image.save(ruta_foto)
 
-if st.button("💾 Guardar Entrega"):
-    guardar_registro()
+        # Guardar en Excel
+        archivo_excel = "registro_entregas.xlsx"
+        nuevo_registro = {
+            "Fecha_de_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Guia_de_Remision": correlativo,
+            "Cliente": cliente,
+            "Transporte": transporte,
+            "Fecha_de_Entrega": fecha_entrega.strftime("%Y-%m-%d"),
+            "Estado_de_Entrega": estado_entrega,
+            "Motivo_Estado": motivo_estado,
+            "Observaciones": observaciones,
+            "Ruta_PDF": pdf_path,
+            "Ruta_Foto": ruta_foto
+        }
+
+        if os.path.exists(archivo_excel):
+            df_existente = pd.read_excel(archivo_excel)
+            df_existente = pd.concat([df_existente, pd.DataFrame([nuevo_registro])], ignore_index=True)
+            df_existente.to_excel(archivo_excel, index=False)
+        else:
+            pd.DataFrame([nuevo_registro]).to_excel(archivo_excel, index=False)
+
+        st.success("✅ Registro guardado correctamente 🎯")
+        st.balloons()
+
