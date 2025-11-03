@@ -5,9 +5,5 @@ pdfplumber
 requests
 Pillow
 openpyxl
-selenium
-webdriver-manager
-opencv-python-headless
-numpy
-pyzbar
+
 
