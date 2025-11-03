@@ -1,10 +1,8 @@
 import streamlit as st
-from streamlit_qrcode_scanner import qrcode_scanner
 import pandas as pd
 import os
 from datetime import datetime
 
-# 📌 Carpeta donde guardamos PDFs y fotos dentro del servidor
 PDF_FOLDER = "pdfs"
 PHOTO_FOLDER = "fotos"
 
@@ -15,41 +13,20 @@ st.set_page_config(page_title="Control GR", layout="centered")
 
 st.title("🚚 Control de Entrega GR - Chofer")
 
-st.markdown("Escanee el **QR** o cargue una **foto** del mismo para procesar la Guía de Remisión.")
+st.markdown("📌 Por favor ingrese la **URL del QR** (luego activaremos el escaneo directo).")
 
-# =====================================================
-# ✅ CAPTURA QR DESDE CÁMARA DEL MÓVIL
-# =====================================================
-qr_result = qrcode_scanner(key="scanner_qr", label="Escanear QR")
+qr_url = st.text_input("🔗 Pega aquí el enlace del QR")
 
-if qr_result:
-    st.success("✅ QR detectado!")
-    st.session_state["qr_url"] = qr_result
-else:
-    st.info("📌 Escanee el QR de la Guía de Remisión")
-
-# =====================================================
-# ✅ Mostrar campos auto-rellenados SOLO SI hay QR
-# =====================================================
 correlativo = st.session_state.get("correlativo", "")
 cliente = st.session_state.get("cliente", "")
 
 st.text_input("📌 Correlativo", value=correlativo, disabled=True)
 st.text_input("🏢 Cliente", value=cliente, disabled=True)
 
-# =====================================================
-# ✅ Fecha de entrega (editable por el chofer)
-# =====================================================
 fecha_entrega = st.date_input("📅 Fecha de Entrega", datetime.today())
 
-# =====================================================
-# ✅ Foto del comprobante firmado
-# =====================================================
 uploaded_photo = st.camera_input("📸 Foto del Comprobante Firmado")
 
-# =====================================================
-# ✅ Lista de transportes (temporal mientras automatizamos extracción)
-# =====================================================
 transportes_opciones = [
     "T & S OPERACIONES LOGISTICAS S.A.C.",
     "SOLUCIONES LOGISTICAS POMA S.A.C.",
@@ -61,15 +38,9 @@ transportes_opciones = [
 ]
 transporte = st.selectbox("🚛 Empresa de Transporte", transportes_opciones)
 
-# =====================================================
-# ✅ Estado de entrega
-# =====================================================
 estado_opciones = ["Entregado", "Entregado Parcialmente", "Rechazado"]
 estado = st.selectbox("📦 Estado de la Entrega", estado_opciones)
 
-# =====================================================
-# ✅ Motivo del estado
-# =====================================================
 motivo_opciones = [
     "Entrega Conforme",
     "Cliente NO solicito pedido",
@@ -82,14 +53,9 @@ motivo_opciones = [
 ]
 motivo_estado = st.selectbox("⚠ Motivo del Estado", motivo_opciones)
 
-# ✅ Observaciones
 observaciones = st.text_area("📝 Observaciones adicionales (opcional)")
 
-# =====================================================
-# ✅ Guardar datos en Excel + guardar foto
-# =====================================================
 def guardar_registro():
-    # Guardar foto
     photo_path = ""
     if uploaded_photo:
         photo_filename = f"foto_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
@@ -107,7 +73,8 @@ def guardar_registro():
         "Motivo_Estado": motivo_estado,
         "Observaciones": observaciones,
         "Ruta_Foto": photo_path,
-        "Ruta_PDF": ""
+        "Ruta_PDF": "",
+        "URL_QR": qr_url
     }
 
     excel_path = "registro_entregas.xlsx"
@@ -120,8 +87,5 @@ def guardar_registro():
     df.to_excel(excel_path, index=False)
     st.success("✅ Registro guardado correctamente")
 
-# Botón para guardar
 if st.button("💾 Guardar Entrega"):
     guardar_registro()
-
-
