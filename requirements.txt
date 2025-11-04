@@ -1,9 +1,11 @@
-streamlit
-streamlit-qrcode-scanner
-pandas
-pdfplumber
+selenium
+webdriver-manager
 requests
+pdfplumber
+pandas
+streamlit
 Pillow
 openpyxl
+
 
 
