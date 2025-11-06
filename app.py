@@ -1070,13 +1070,23 @@ motivos_estado = [
     "NO CUMPLIÓ CON LA CITA",
     "MERCADERIA FALTANTE"
 ]
+
+lista_transportes = [
+    "T & S OPERACIONES LOGISTICAS S.A.C.",
+    "SOLUCIONES LOGISTICAS POMA S.A.C.",
+    "FOSFORERA PERUANA S.A.",
+    "J & J TRANSPORTES ORIENTE EXPRESS",
+    "LOGISTICA Y TRANSPORTES S & P EIRL",
+    "TRANSPORT SOLUTION A & L S.A.C.",
+    "TRANSPORTE ORIENTAL"
+]
 motivo_estado = st.selectbox("⚠ Motivo del Estado", motivos_estado)
 
 estados_entrega = ["ENTREGADO", "ENTREGADO PARCIALMENTE", "RECHAZADO"]
 estado_entrega = st.selectbox("📌 Estado de Entrega", estados_entrega)
 
 fecha_entrega = st.date_input("📅 Fecha de Entrega", date.today())
-transporte = st.text_input("Empresa de Transporte")
+transporte = st.selectbox("Empresa de Transporte", lista_transportes)
 observaciones = st.text_area("Observaciones (Opcional)")
 
 st.header("3️⃣ Comprobante Firmado")
